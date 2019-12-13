@@ -19,8 +19,8 @@ def kl_loss_gaussian(prior_mu, mu,prior_sigma, sigma):
     inter_loss = math.log(min(max(prior_sigma/sigma, 1e-6),1e6)) + (sigma**2+(mu-prior_mu)**2)/(2*prior_sigma**2) - 0.5
     return inter_loss
 
-def compute_outer_loss(mu, gamma, target_f, prior):
-    loss_weight = [2.,0.5]
+def compute_outer_loss(mu, gamma, target_f, prior, stop_gamma_grad):
+    loss_weight = [2,0.5] #[0.5,0.125]
     intra_loss_p = gaussian_MSE_loss(mu,1,target_f)
     inter_loss_p = kl_loss_gaussian(prior, mu, 1, 1)
 
@@ -29,9 +29,16 @@ def compute_outer_loss(mu, gamma, target_f, prior):
     B = mu.shape[0]
     M = mu.shape[2]
     intra_loss_reshape = intra_loss_p.view(intra_loss_p.shape[0], intra_loss_p.shape[1], intra_loss_p.shape[2],-1)
-    intra_loss = torch.sum(intra_loss_reshape * gamma) / (B*M*intra_loss_reshape.shape[-1])
-    inter_loss_reshape = inter_loss_p.view(inter_loss_p.shape[0],inter_loss_p.shape[1],inter_loss_p.shape[2],-1)
-    inter_loss = torch.sum(inter_loss_reshape * (1. - gamma)) / (B*M*inter_loss_reshape.shape[-1])
+    inter_loss_reshape = inter_loss_p.view(inter_loss_p.shape[0], inter_loss_p.shape[1], inter_loss_p.shape[2], -1)
+
+    if stop_gamma_grad == 0:
+        intra_loss = torch.sum(intra_loss_reshape * gamma) / (B*M*intra_loss_reshape.shape[-1])
+        inter_loss = torch.sum(inter_loss_reshape * (1. - gamma)) / (B * M * inter_loss_reshape.shape[-1])
+    else:
+        intra_loss = torch.sum(intra_loss_reshape * gamma.detach()) / (B * M * intra_loss_reshape.shape[-1])
+        inter_loss = torch.sum(inter_loss_reshape * (1. - gamma.detach())) / (B * M * inter_loss_reshape.shape[-1])
+
+
     total_loss = intra_loss*loss_weight[0] + loss_weight[1] * inter_loss
 
     return total_loss, intra_loss, inter_loss

@@ -122,6 +122,7 @@ class ModelNetTrainer(object):
         iter_num = class_nem.iter_num
         type = class_nem.type
         prior = compute_prior(type) # EM prior
+        stop_gamma_grad = class_nem.stop_gamma_grad
 
         for epoch in range(n_epochs):
             # plot learning rate
@@ -159,7 +160,7 @@ class ModelNetTrainer(object):
                     theta, pred_f, gamma =  state
 
                     # compute nem losses
-                    nem_loss, intra_loss, inter_loss = compute_outer_loss(pred_f, gamma, input, prior)
+                    nem_loss, intra_loss, inter_loss = compute_outer_loss(pred_f, gamma, input, prior, stop_gamma_grad)
                     nem_losses.append(nem_loss)
                     intra_losses.append(intra_loss)
                     inter_losses.append(inter_loss)
@@ -240,6 +241,7 @@ class ModelNetTrainer(object):
         iter_num = class_nem.iter_num
         type = class_nem.type
         prior = compute_prior(type)  # EM prior
+        stop_gamma_grad = class_nem.stop_gamma_grad
 
         for _, data in enumerate(self.val_loader, 0):
 
@@ -270,7 +272,7 @@ class ModelNetTrainer(object):
                 theta, pred_f, gamma = state
 
                 # compute nem losses
-                nem_loss, intra_loss, inter_loss = compute_outer_loss(pred_f, gamma, input, prior)
+                nem_loss, intra_loss, inter_loss = compute_outer_loss(pred_f, gamma, input, prior, stop_gamma_grad)
                 nem_losses.append(nem_loss)
                 intra_losses.append(intra_loss)
                 inter_losses.append(inter_loss)
