@@ -8,6 +8,7 @@ from torchvision import transforms, datasets
 import glob
 import itertools
 import math
+import random
 from torch.autograd import Variable
 
 from tools.Trainer import ModelNetTrainer
@@ -42,6 +43,7 @@ parser.add_argument("-epoch", type=int, help="epoch number", default=30)
 parser.add_argument("-if_pool", type=int, help="use pooling rather than concatenation for multi-view", default=0)
 parser.add_argument("-train_or_test_mode", type=str, help="train or test", default='train')
 parser.add_argument("-modelfile", type=str, help="model file name", default='')
+parser.add_argument("-init_type", type=str, help="initializetion strategy for NEM", default='rand')
 #os.environ['CUDA_VISIBLE_DEVICES']='1'
 
 def create_folder(log_dir):
@@ -112,7 +114,7 @@ class KmeanImgDataset(torch.utils.data.Dataset):
 
 
 class NEM(Model):
-    def __init__(self,nclasses=40,view_num=12,layer_norm=1, k=3, batch_size=32, input_dim=4096, input_type='fc', rnn_hidden_size=1024,iter_num=10, stop_gamma_grad=0):
+    def __init__(self,nclasses=40,view_num=12,layer_norm=1, k=3, batch_size=32, input_dim=4096, input_type='fc', rnn_hidden_size=1024,iter_num=10, stop_gamma_grad=0, init_type='rand'):
         super(NEM,self).__init__('NEM')
         self.nclasses = nclasses
         self.view_dist = 'gaussian'
@@ -126,6 +128,7 @@ class NEM(Model):
         self.type = input_type # fc feature or feature_map
         self.iter_num = iter_num
         self.stop_gamma_grad = stop_gamma_grad
+        self.init_type = init_type
 
         #  before_NEM => rnn_NEM => after_NEM
         if layer_norm < 1:
@@ -187,8 +190,20 @@ class NEM(Model):
             gamma = torch.ones([B,k,m,1])
         else:
             # init with uniform dist
-            gamma = torch.rand([B,k,m,1])
-            gamma =  gamma/gamma.sum(1).unsqueeze(1)
+            if self.init_type == 'rand':
+                gamma = torch.rand([B,k,m,1])
+                gamma =  gamma/gamma.sum(1).unsqueeze(1)
+            elif self.init_type == 'bin_rand':
+                gamma = torch.zeros([B,k,m,1])
+                list_view = [i for i in range(m)]
+                random.shuffle(list_view)
+                for i in range(k):
+                    gamma[:,i,list_view[i],:]=1
+            elif self.init_type == 'bin_uniform':
+                gamma = torch.zeros([B,k,m,1])
+                stride = int(m/k)
+                for i in range(k):
+                    gamma[:,i,0+i*stride,:] = 1
 
         return h,pred,gamma
 
@@ -362,7 +377,7 @@ if __name__ == '__main__':
             type = None
             input_dim = None
 
-        nem = NEM(layer_norm=args.layer_norm,k=args.cluster_n,batch_size=args.batchSize, input_dim=input_dim, input_type=type, rnn_hidden_size=args.rnn_hidden_size,iter_num=args.iter_num, stop_gamma_grad=args.stop_gamma_grad)
+        nem = NEM(layer_norm=args.layer_norm,k=args.cluster_n,batch_size=args.batchSize, input_dim=input_dim, input_type=type, rnn_hidden_size=args.rnn_hidden_size,iter_num=args.iter_num, stop_gamma_grad=args.stop_gamma_grad,init_type=args.init_type)
 
         cnet_2 = Multi_View_Net(cnet,cnn_name=args.cnn_name, nclasses=40,k=args.cluster_n, rnn_hidden_size=args.rnn_hidden_size,if_sort=args.if_sort, if_pooling=args.if_pool)
         del cnet
@@ -413,7 +428,7 @@ if __name__ == '__main__':
         cnet_2.eval()
 
         val_dataset = KmeanImgDataset(args.val_path, fea_type=args.fea_type)
-        val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=args.batchSize, shuffle=False, num_workers=0)
+        val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=8, shuffle=False, num_workers=0)
 
         optimizer = None
 
