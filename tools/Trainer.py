@@ -3,12 +3,13 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
 import numpy as np
+import random
 import pickle
 import os
 from tensorboardX import SummaryWriter
 import time
 from collections import Iterable
-from .NEM_utilities import compute_prior, compute_outer_loss
+from .NEM_utilities import compute_prior, compute_outer_loss, clip_gradient
 
 class ModelNetTrainer(object):
 
@@ -22,6 +23,7 @@ class ModelNetTrainer(object):
         self.model_name = model_name
         self.log_dir = log_dir
         self.num_views = num_views
+        self.gpu_num = torch.cuda.device_count()
         if isinstance(model, Iterable):
             self.model = []
             for i in range(len(model)):
@@ -123,7 +125,9 @@ class ModelNetTrainer(object):
         type = class_nem.type
         prior = compute_prior(type) # EM prior
         stop_gamma_grad = class_nem.stop_gamma_grad
-
+        if_gamma_prior = class_nem.if_gamma_prior
+        if_decoder_warm_up = class_nem.if_decoder_warm_up
+        if_total_loss = class_nem.if_total_loss
         for epoch in range(n_epochs):
             # plot learning rate
 
@@ -131,13 +135,33 @@ class ModelNetTrainer(object):
             self.writer.add_scalar('params/lr', lr, epoch)
 
             # train one epoch
-            for i, data in enumerate(self.train_loader):
+            for i, i_data in enumerate(self.train_loader):
 
                 start = time.time()
+
+                # dataparallel check
+                mod = i_data[0].shape[0] % self.gpu_num
+                if mod == 0:
+                    data = i_data
+                else:
+                    b = i_data[0].shape[0]
+                    in_data_init = torch.zeros(b+(self.gpu_num-mod),i_data[1].shape[1], i_data[1].shape[2])
+                    in_data_init[0:b] = i_data[1]
+                    in_data_init[-(self.gpu_num-mod):] = i_data[1][-(self.gpu_num-mod):]
+                    target_data_init = torch.zeros(b+(self.gpu_num-mod))
+                    target_data_init[0:b] = i_data[0]
+                    target_data_init[-(self.gpu_num-mod):] = i_data[0][-(self.gpu_num-mod):]
+                    data = [target_data_init, in_data_init]
+
+
+
                 in_data = data[1] # B,M,C,H,W or B,M,C
 
                 # init states
-                state = class_nem.init_state(in_data.shape)
+                init_state = class_nem.init_state(in_data.shape,in_data)
+                state = (init_state[0], init_state[1], init_state[2])
+                gamma_prior = init_state[3]
+                gamma = init_state[3]
 
                 if len(in_data.size()) == 3:
                     in_data = in_data.unsqueeze(0).expand(iter_num,-1,-1,-1)
@@ -159,19 +183,28 @@ class ModelNetTrainer(object):
                     state = nem(input, state)
                     theta, pred_f, gamma =  state
 
+                    '''
+                    if if_decoder_warm_up == 1 and if_gamma_prior == 1:
+                        stride = 0.1
+                        thd = epoch * stride
+                        if random.uniform(0,1) >= thd:
+                            gamma = gamma_prior
+                  '''
                     # compute nem losses
-                    nem_loss, intra_loss, inter_loss = compute_outer_loss(pred_f, gamma, input, prior, stop_gamma_grad)
+                    nem_loss, intra_loss, inter_loss = compute_outer_loss(pred_f, gamma, input, prior, stop_gamma_grad, gamma_prior, if_gamma_prior)
                     nem_losses.append(nem_loss)
                     intra_losses.append(intra_loss)
                     inter_losses.append(inter_loss)
                     nem_outputs.append(state)
 
-                out_data = c_net(nem_outputs[-1][0])
-
-                loss = self.loss_fn(out_data, target) + nem_losses[-1]
+                out_data = c_net(nem_outputs[-1][0],gamma)
+                loss_weight = 0 if if_decoder_warm_up == 1 and epoch < 5 else 1
+                closs = self.loss_fn(out_data, target)
+                loss = (closs * loss_weight + nem_losses[-1]) if if_total_loss == 0 else (loss_weight * closs + torch.mean(torch.Tensor(nem_losses).cuda()))
+                #loss = self.loss_fn(out_data, target)
                 i_acc += 1
                 self.writer.add_scalar('train/train_loss', loss, i_acc)
-                self.writer.add_scalar('train/c_loss', loss-nem_losses[-1], i_acc)
+                self.writer.add_scalar('train/c_loss', closs, i_acc)
                 self.writer.add_scalar('train/nem_loss', nem_losses[-1], i_acc)
                 self.writer.add_scalar('train/intra_loss', intra_losses[-1], i_acc)
                 self.writer.add_scalar('train/inter_loss', inter_losses[-1], i_acc)
@@ -184,6 +217,8 @@ class ModelNetTrainer(object):
                 self.writer.add_scalar('train/train_overall_acc', acc, i_acc)
 
                 loss.backward()
+                if class_nem.bn_init_sigma == 1:
+                    clip_gradient(self.optimizer,5)
                 self.optimizer.step()
 
                 torch.cuda.synchronize()
@@ -192,7 +227,9 @@ class ModelNetTrainer(object):
                     print(log_str)
 
 
-
+            if epoch == 0 and class_nem.bn_init_sigma == 1:
+                total_sigma = class_nem.total_sigma / i_acc
+                torch.save(total_sigma,'total_sigma.pth')
             # evaluation
             print('run evaluation...')
             start = time.time()
@@ -242,15 +279,31 @@ class ModelNetTrainer(object):
         type = class_nem.type
         prior = compute_prior(type)  # EM prior
         stop_gamma_grad = class_nem.stop_gamma_grad
-
-        for _, data in enumerate(self.val_loader, 0):
+        if_gamma_prior = class_nem.if_gamma_prior
+        for _, i_data in enumerate(self.val_loader, 0):
 
             # data[0]: label; data[1]:input; data[2]:file_path
             # N, M, C, H, W = data[1].size()
+            mod = i_data[0].shape[0] % self.gpu_num
+            if mod == 0:
+                data = i_data
+            else:
+                b = i_data[0].shape[0]
+                in_data_init = torch.zeros(b + (self.gpu_num - mod), i_data[1].shape[1], i_data[1].shape[2])
+                in_data_init[0:b] = i_data[1]
+                in_data_init[-(self.gpu_num - mod):] = i_data[1][-(self.gpu_num - mod):]
+                target_data_init = torch.zeros(b + (self.gpu_num - mod))
+                target_data_init[0:b] = i_data[0]
+                target_data_init[-(self.gpu_num - mod):] = i_data[0][-(self.gpu_num - mod):]
+                data = [target_data_init, in_data_init]
+
             in_data = data[1]  # B,M,C,H,W or B,M,C
 
             # init states
-            state = class_nem.init_state(in_data.shape)
+            init_state = class_nem.init_state(in_data.shape, in_data)
+            state = (init_state[0], init_state[1], init_state[2])
+            gamma_prior = init_state[3]
+            gamma = init_state[3]
 
             if len(in_data.size()) == 3:
                 in_data = in_data.unsqueeze(0).expand(iter_num, -1, -1, -1)
@@ -272,13 +325,13 @@ class ModelNetTrainer(object):
                 theta, pred_f, gamma = state
 
                 # compute nem losses
-                nem_loss, intra_loss, inter_loss = compute_outer_loss(pred_f, gamma, input, prior, stop_gamma_grad)
+                nem_loss, intra_loss, inter_loss = compute_outer_loss(pred_f, gamma, input, prior, stop_gamma_grad,gamma_prior, if_gamma_prior)
                 nem_losses.append(nem_loss)
                 intra_losses.append(intra_loss)
                 inter_losses.append(inter_loss)
                 nem_outputs.append(state)
 
-            out_data = c_net(nem_outputs[-1][0])
+            out_data = c_net(nem_outputs[-1][0],gamma)
             pred = torch.max(out_data, 1)[1]
             all_loss += self.loss_fn(out_data, target).cpu().data.numpy()
             results = pred == target
@@ -307,6 +360,89 @@ class ModelNetTrainer(object):
 
         return loss, val_overall_acc, val_mean_class_acc
 
+    def save_feature_nem(self, epoch):
+        all_correct_points = 0
+        all_points = 0
+
+        # in_data = None
+        # out_data = None
+        # target = None
+
+        wrong_class = np.zeros(40)
+        samples_class = np.zeros(40)
+        all_loss = 0
+
+        nem, c_net = self.model
+        nem.eval()
+        c_net.eval()
+
+        class_nem = nem.module # get NEM object
+
+        iter_num = class_nem.iter_num
+        type = class_nem.type
+        prior = compute_prior(type)  # EM prior
+        stop_gamma_grad = class_nem.stop_gamma_grad
+        if_gamma_prior = class_nem.if_gamma_prior
+        for _, i_data in enumerate(self.val_loader, 0):
+
+            '''
+            # data[0]: label; data[1]:input; data[2]:file_path
+            # N, M, C, H, W = data[1].size()
+            mod = i_data[0].shape[0] % self.gpu_num
+            if mod == 0:
+                data = i_data
+            else:
+                b = i_data[0].shape[0]
+                in_data_init = torch.zeros(b + (self.gpu_num - mod), i_data[1].shape[1], i_data[1].shape[2])
+                in_data_init[0:b] = i_data[1]
+                in_data_init[-(self.gpu_num - mod):] = i_data[1][-(self.gpu_num - mod):]
+                target_data_init = torch.zeros(b + (self.gpu_num - mod))
+                target_data_init[0:b] = i_data[0]
+                target_data_init[-(self.gpu_num - mod):] = i_data[0][-(self.gpu_num - mod):]
+                data = [target_data_init, in_data_init]
+            '''
+            data = i_data
+
+            in_data = data[1]  # B,M,C,H,W or B,M,C
+
+            assert (in_data.shape[0] == 1), 'save data only support bs=1'
+
+            # init states
+            init_state = class_nem.init_state(in_data.shape, in_data)
+            state = (init_state[0], init_state[1], init_state[2])
+            gamma_prior = init_state[3]
+            gamma = init_state[3]
+
+            if len(in_data.size()) == 3:
+                in_data = in_data.unsqueeze(0).expand(iter_num, -1, -1, -1)
+            elif len(in_data.size()) == 5:
+                in_data = in_data.unsqueeze(0).expand(iter_num, -1, -1, -1, -1, -1)
+            else:
+                raise KeyError('wrong size for data')
+
+            in_data = Variable(in_data).cuda().float()
+            target = Variable(data[0]).cuda()
+
+            nem_losses, intra_losses, inter_losses, nem_outputs = [], [], [], []
+
+            # run NEM
+            for j in range(iter_num):
+                # em iteration
+                input = in_data[j].unsqueeze(1)  # B,1,M...
+                state = nem(input, state)
+                theta, pred_f, gamma = state
+
+                # compute nem losses
+                nem_loss, intra_loss, inter_loss = compute_outer_loss(pred_f, gamma, input, prior, stop_gamma_grad,gamma_prior, if_gamma_prior)
+                nem_losses.append(nem_loss)
+                intra_losses.append(intra_loss)
+                inter_losses.append(inter_loss)
+                nem_outputs.append(state)
+
+            out_data = c_net(nem_outputs[-1][0],gamma)
+            data_path = '/mnt/cloud_disk/yw/gamma/'+ data[2][0].split('/',5)[5][0:-3] + 'npz'
+            #np.save(data_path,out_data.cpu().detach().numpy())
+            np.savez(data_path, save_gamma=gamma.cpu().detach().numpy(), save_sort=out_data.cpu().detach().numpy())
 
     def train_kmean_threeview(self, n_epochs):
 
