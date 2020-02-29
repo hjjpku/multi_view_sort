@@ -14,8 +14,8 @@ from .NEM_utilities import compute_prior, compute_outer_loss, clip_gradient
 class ModelNetTrainer(object):
 
     def __init__(self, model, train_loader, val_loader, optimizer, loss_fn, \
-                 model_name, log_dir, num_views=12):
-
+                 model_name, log_dir, num_views=12, class_num=40):
+        self.class_num = class_num
         self.optimizer = optimizer
         self.train_loader = train_loader
         self.val_loader = val_loader
@@ -180,16 +180,16 @@ class ModelNetTrainer(object):
                 for j in range(iter_num):
                     # em iteration
                     input = in_data[j].unsqueeze(1) # B,1,M...
-                    state = nem(input, state)
+                    #state = nem(input, state)
+                    if if_decoder_warm_up == 1 and epoch < 10:
+                        state = nem(input, (state[0],state[1],gamma_prior))
+                    else:
+                        state = nem(input,state)
+                        #state = nem(input, (state[0], state[1], gamma_prior))
+
                     theta, pred_f, gamma =  state
 
-                    '''
-                    if if_decoder_warm_up == 1 and if_gamma_prior == 1:
-                        stride = 0.1
-                        thd = epoch * stride
-                        if random.uniform(0,1) >= thd:
-                            gamma = gamma_prior
-                  '''
+
                     # compute nem losses
                     nem_loss, intra_loss, inter_loss = compute_outer_loss(pred_f, gamma, input, prior, stop_gamma_grad, gamma_prior, if_gamma_prior)
                     nem_losses.append(nem_loss)
@@ -198,7 +198,7 @@ class ModelNetTrainer(object):
                     nem_outputs.append(state)
 
                 out_data = c_net(nem_outputs[-1][0],gamma)
-                loss_weight = 0 if if_decoder_warm_up == 1 and epoch < 5 else 1
+                loss_weight = 1
                 closs = self.loss_fn(out_data, target)
                 loss = (closs * loss_weight + nem_losses[-1]) if if_total_loss == 0 else (loss_weight * closs + torch.mean(torch.Tensor(nem_losses).cuda()))
                 #loss = self.loss_fn(out_data, target)
@@ -249,7 +249,7 @@ class ModelNetTrainer(object):
                 c_net.module.save(self.log_dir, epoch)
 
             # adjust learning rate manually
-            if epoch > 0 and (epoch + 1) % 10 == 0:
+            if epoch > 0 and (epoch + 1) % 15 == 0:
                 for param_group in self.optimizer.param_groups:
                     param_group['lr'] = param_group['lr'] * 0.5
 
@@ -265,8 +265,8 @@ class ModelNetTrainer(object):
         # out_data = None
         # target = None
 
-        wrong_class = np.zeros(40)
-        samples_class = np.zeros(40)
+        wrong_class = np.zeros(self.class_num)
+        samples_class = np.zeros(self.class_num)
         all_loss = 0
 
         nem, c_net = self.model
@@ -274,12 +274,13 @@ class ModelNetTrainer(object):
         c_net.eval()
 
         class_nem = nem.module # get NEM object
-
+        cluster_n = class_nem.k
         iter_num = class_nem.iter_num
         type = class_nem.type
         prior = compute_prior(type)  # EM prior
         stop_gamma_grad = class_nem.stop_gamma_grad
         if_gamma_prior = class_nem.if_gamma_prior
+        if_decoder_warm_up = class_nem.if_decoder_warm_up
         for _, i_data in enumerate(self.val_loader, 0):
 
             # data[0]: label; data[1]:input; data[2]:file_path
@@ -321,6 +322,7 @@ class ModelNetTrainer(object):
             for j in range(iter_num):
                 # em iteration
                 input = in_data[j].unsqueeze(1)  # B,1,M...
+                # state = nem(input, state)
                 state = nem(input, state)
                 theta, pred_f, gamma = state
 
@@ -347,6 +349,8 @@ class ModelNetTrainer(object):
 
         print('Total # of test models: ', all_points)
         val_mean_class_acc = np.mean((samples_class - wrong_class) / samples_class)
+        each_class_acc = (samples_class - wrong_class) / samples_class
+        np.save(str(cluster_n)+'_each_class_acc.npy',each_class_acc)
         acc = float(all_correct_points) / all_points
         val_overall_acc = acc
         loss = all_loss / len(self.val_loader)
@@ -368,8 +372,8 @@ class ModelNetTrainer(object):
         # out_data = None
         # target = None
 
-        wrong_class = np.zeros(40)
-        samples_class = np.zeros(40)
+        wrong_class = np.zeros(self.class_num)
+        samples_class = np.zeros(self.class_num)
         all_loss = 0
 
         nem, c_net = self.model
@@ -440,9 +444,10 @@ class ModelNetTrainer(object):
                 nem_outputs.append(state)
 
             out_data = c_net(nem_outputs[-1][0],gamma)
-            data_path = '/mnt/cloud_disk/yw/gamma/'+ data[2][0].split('/',5)[5][0:-3] + 'npz'
-            #np.save(data_path,out_data.cpu().detach().numpy())
-            np.savez(data_path, save_gamma=gamma.cpu().detach().numpy(), save_sort=out_data.cpu().detach().numpy())
+            data_path = '/mnt/cloud_disk/yw/retrieval_test_mnet10/' + data[2][0].split('/', 5)[5]
+            #data_path = '/mnt/cloud_disk/yw/gamma2/'+ data[2][0].split('/',5)[5][0:-3] + 'npz'
+            np.save(data_path,out_data.cpu().detach().numpy())
+            #np.savez(data_path, save_gamma=gamma.cpu().detach().numpy(), save_sort=out_data.cpu().detach().numpy())
 
     def train_kmean_threeview(self, n_epochs):
 

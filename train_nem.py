@@ -25,15 +25,19 @@ parser.add_argument("-num_models", type=int, help="number of models per class", 
 parser.add_argument("-lr", type=float, help="learning rate", default=5e-5)
 parser.add_argument("-weight_decay", type=float, help="weight decay", default=0.0001)
 parser.add_argument("-no_pretraining", dest='no_pretraining', action='store_true')
-parser.add_argument("-cnn_name", "--cnn_name", type=str, help="cnn model name", default="vgg11")
+parser.add_argument("-cnn_name", "--cnn_name", type=str, help="cnn model name", default="vggm")
 parser.add_argument("-num_views", type=int, help="number of views", default=12)
 #parser.add_argument("-train_path", type=str, default="/mnt/cloud_disk/yw/MVCNN_features/")
 #parser.add_argument("-val_path", type=str, default="/mnt/cloud_disk/yw/MVCNN_features_val/")
 parser.set_defaults(train=False)
-#parser.add_argument("-train_path", type=str, default="/mnt/cloud_disk/yw/MVCNN_features_vgg_m/")
-#parser.add_argument("-val_path", type=str, default="/mnt/cloud_disk/yw/MVCNN_features_vgg_m_val/")
-parser.add_argument("-train_path", type=str, default="/mnt/cloud_disk/yw/MVCNN_features_vggm_pretrained_imagenet_train/")
-parser.add_argument("-val_path", type=str, default="/mnt/cloud_disk/yw/MVCNN_features_vggm_pretrained_imagenet_val/")
+#parser.add_argument("-train_path", type=str, default="/mnt/cloud_disk/yw/MVCNN_features_vggm_pretrained_imagenet_modelnet10_10hidden_train/")
+#parser.add_argument("-val_path", type=str, default="/mnt/cloud_disk/yw/MVCNN_features_vggm_pretrained_imagenet_modelnet10_10hidden_val/")
+#parser.add_argument("-train_path", type=str, default="/mnt/cloud_disk/yw/MVCNN_features_vggm_pretrained_imagenet_train/")
+#parser.add_argument("-val_path", type=str, default="/mnt/cloud_disk/yw/MVCNN_features_vggm_pretrained_imagenet_val/")
+#parser.add_argument("-train_path", type=str, default="/mnt/cloud_disk/yw/MVCNN_features_vggm_pretrained_imagenet_shapenetcore_train/")
+#parser.add_argument("-val_path", type=str, default="/mnt/cloud_disk/yw/MVCNN_features_vggm_pretrained_imagenet_shapenetcore_test/")
+parser.add_argument("-train_path", type=str, default="/mnt/cloud_disk/yw/MVCNN_features_vgg19_pretrained_imagenet_shapenetcore_train/")
+parser.add_argument("-val_path", type=str, default="/mnt/cloud_disk/yw/MVCNN_features_vgg19_pretrained_imagenet_shapenetcore_test/")
 parser.add_argument("-fea_type", type=str, help="feature type for NEM, fc or conv", default='fc')
 parser.add_argument("-layer_norm", type=int, help="use layernorm for NEM or not", default=1)
 parser.add_argument("-cluster_n", type=int, help="cluster number", default=4)
@@ -53,6 +57,8 @@ parser.add_argument("-if_gamma_prior", type=int, help="if use gamma prior loss",
 parser.add_argument("-if_decoder_warm_up", type=int, help="if warm up decoder", default=0)
 parser.add_argument("-if_total_loss", type=int, help="if use loss from each time stamp", default=0)
 parser.add_argument("-arch", type=int, help="net architecture", default=0)
+parser.add_argument("-e_sigma", type=float, help="net architecture", default=0.1)
+parser.add_argument("-dataset", type=str, help="dataset to use, MNet40, MNet10, ShapeNet are supported", default='MNet40')
 #os.environ['CUDA_VISIBLE_DEVICES']='1'
 
 def create_folder(log_dir):
@@ -67,12 +73,20 @@ def create_folder(log_dir):
 
 class KmeanImgDataset(torch.utils.data.Dataset):
     def __init__(self,root_dir, test_mode=False, \
-                 num_models=0, num_views=12, shuffle=True,fea_type=None):
-        self.classnames = ['airplane', 'bathtub', 'bed', 'bench', 'bookshelf', 'bottle', 'bowl', 'car', 'chair',
+                 num_models=0, num_views=12, shuffle=True,fea_type=None, dataset='MNet40'):
+        self.dataset = dataset
+        if self.dataset == 'MNet40':
+            self.classnames = ['airplane', 'bathtub', 'bed', 'bench', 'bookshelf', 'bottle', 'bowl', 'car', 'chair',
                            'cone', 'cup', 'curtain', 'desk', 'door', 'dresser', 'flower_pot', 'glass_box',
                            'guitar', 'keyboard', 'lamp', 'laptop', 'mantel', 'monitor', 'night_stand',
                            'person', 'piano', 'plant', 'radio', 'range_hood', 'sink', 'sofa', 'stairs',
                            'stool', 'table', 'tent', 'toilet', 'tv_stand', 'vase', 'wardrobe', 'xbox']
+        elif self.dataset == 'MNet10':
+            self.classnames = ['table','sofa','dresser','chair','bathtub','toilet','night_stand','monitor','desk','bed']
+        elif self.dataset == 'ShapeNet':
+            self.classnames = ['2691156', '2747177', '2773838', '2801938', '2808440', '2818832', '2828884', '2843684', '2871439', '2876657', '2880940', '2924116', '2933112', '2942699', '2946921', '2954340', '2958343', '2992529', '3001627', '3046257', '3085013', '3207941', '3211117', '3261776', '3325088', '3337140', '3467517', '3513137', '3593526', '3624134', '3636649', '3642806', '3691459', '3710193', '3759954', '3761084', '3790512', '3797390', '3928116', '3938244', '3948459', '3991062', '4004475', '4074963', '4090263', '4099429', '4225987', '4256520', '4330267', '4379243', '4401088', '4460130', '4468005', '4530566', '4554684']
+        else:
+            print('not supported dataset!')
         self.root_dir = root_dir
         self.test_mode = test_mode
         self.num_views = num_views
@@ -82,7 +96,9 @@ class KmeanImgDataset(torch.utils.data.Dataset):
             if fea_type == 'fc':
                 #all_files = sorted(glob.glob(root_dir + self.classnames[i] + '/fc_features' + '/*.npy'))
                 #all_files = sorted(glob.glob(root_dir + self.classnames[i] + '/fc_features_vgg_m_no_pretrained' + '/*.npy'))
-                all_files = sorted(glob.glob(root_dir + self.classnames[i] + '/fc_features_vggm_pretrained_imagenet' + '/*.npy'))
+                #all_files = sorted(glob.glob(root_dir + self.classnames[i] + '/fc_features_vggm_pretrained_imagenet' + '/*.npy'))
+                all_files = sorted(
+                    glob.glob(root_dir + self.classnames[i] + '/fc_features_vggm_pretrained_imagenet' + '/*.npy'))
             else:
                 all_files = sorted(glob.glob(root_dir+self.classnames[i]+'/features'+'/*.npy'))
 
@@ -124,11 +140,11 @@ class KmeanImgDataset(torch.utils.data.Dataset):
 
 
 class NEM(Model):
-    def __init__(self,nclasses=40,view_num=12,layer_norm=1, k=3, batch_size=32, input_dim=4096, input_type='fc', rnn_hidden_size=1024,iter_num=10, stop_gamma_grad=0, init_type='rand',no_sig=0,bn_init_sigma=0,gamma_prior_loss=0,if_decoder_warm_up=0, if_total_loss=0,arch=0):
+    def __init__(self,nclasses=40,view_num=12,layer_norm=1, k=3, batch_size=32, input_dim=4096, input_type='fc', rnn_hidden_size=1024,iter_num=10, stop_gamma_grad=0, init_type='rand',no_sig=0,bn_init_sigma=0,gamma_prior_loss=0,if_decoder_warm_up=0, if_total_loss=0,arch=0,e_sigma=0.1):
         super(NEM,self).__init__('NEM')
         self.nclasses = nclasses
         self.view_dist = 'gaussian'
-        self.e_sigma = 0.25
+        self.e_sigma = e_sigma
         self.bn_init_sigma = bn_init_sigma
         self.total_sigma = 0
         self.k = k # number of clusers
@@ -238,6 +254,7 @@ class NEM(Model):
             if self.init_type == 'rand':
                 gamma = torch.rand([B,k,m,1])
                 gamma =  gamma/gamma.sum(1).unsqueeze(1)
+                gamma_prior = gamma
             elif self.init_type == 'bin_rand':
                 gamma, gamma_prior = bin_rand(B,k,m)
 
@@ -394,7 +411,7 @@ class Multi_View_Net(Model):
         if self.if_sort == 1:
             _, idx = torch.sort(scores_reshape, dim=1, descending=True)
             if self.save_fea == 1:
-                return idx
+               return idx
             masked_input_sort = torch.zeros_like(masked_input)
             for i in range(masked_input.shape[0]): #b
                 for j in range(self.k):
@@ -434,6 +451,13 @@ if __name__ == '__main__':
     np.random.seed(10)
 
     args = parser.parse_args()
+    dataset = args.dataset
+    if dataset == 'MNet40':
+        class_num = 40
+    elif dataset == 'MNet10':
+        class_num=10
+    elif dataset == 'ShapeNet':
+        class_num=55
 
     if args.train_or_test_mode == 'train':       # train
 
@@ -446,7 +470,7 @@ if __name__ == '__main__':
 
         # STAGE 1
 
-        cnet = SVCNN(args.name, nclasses=40, pretraining=pretraining, cnn_name=args.cnn_name)
+        cnet = SVCNN(args.name, nclasses=class_num, pretraining=pretraining, cnn_name=args.cnn_name)
 
 
         create_folder(log_dir)
@@ -463,36 +487,36 @@ if __name__ == '__main__':
             type = None
             input_dim = None
 
-        nem = NEM(layer_norm=args.layer_norm,k=args.cluster_n,batch_size=args.batchSize, input_dim=input_dim, input_type=type, rnn_hidden_size=args.rnn_hidden_size,iter_num=args.iter_num, stop_gamma_grad=args.stop_gamma_grad,init_type=args.init_type,no_sig=args.no_sig,bn_init_sigma=args.bn_init_sigma, gamma_prior_loss=args.if_gamma_prior,if_decoder_warm_up=args.if_decoder_warm_up,if_total_loss=args.if_total_loss,arch=args.arch)
+        nem = NEM(nclasses=class_num, layer_norm=args.layer_norm,k=args.cluster_n,batch_size=args.batchSize, input_dim=input_dim, input_type=type, rnn_hidden_size=args.rnn_hidden_size,iter_num=args.iter_num, stop_gamma_grad=args.stop_gamma_grad,init_type=args.init_type,no_sig=args.no_sig,bn_init_sigma=args.bn_init_sigma, gamma_prior_loss=args.if_gamma_prior,if_decoder_warm_up=args.if_decoder_warm_up,if_total_loss=args.if_total_loss,arch=args.arch,e_sigma=args.e_sigma)
         nem.cuda()
 
-        cnet_2 = Multi_View_Net(cnet,cnn_name=args.cnn_name, nclasses=40,k=args.cluster_n, rnn_hidden_size=args.rnn_hidden_size,if_sort=args.if_sort, if_pooling=args.if_pool)
+        cnet_2 = Multi_View_Net(cnet,cnn_name=args.cnn_name, nclasses=class_num,k=args.cluster_n, rnn_hidden_size=args.rnn_hidden_size,if_sort=args.if_sort, if_pooling=args.if_pool)
         del cnet
         cnet_2.cuda()
 
         optimizer = optim.Adam(itertools.chain(nem.parameters(),cnet_2.parameters()), lr=args.lr, weight_decay=args.weight_decay, betas=(0.9, 0.999))
         #optimizer = optim.Adagrad(itertools.chain(nem.parameters(), cnet_2.parameters()), lr=args.lr,lr_decay=1/4000,weight_decay=args.weight_decay)
 
-        train_dataset = KmeanImgDataset(args.train_path, fea_type=args.fea_type) # fc feature path or conv feature path
+        train_dataset = KmeanImgDataset(args.train_path, fea_type=args.fea_type,dataset=dataset) # fc feature path or conv feature path
         train_loader = torch.utils.data.DataLoader(train_dataset,batch_size=args.batchSize,shuffle=True,num_workers=0)
 
-        val_dataset = KmeanImgDataset(args.val_path,fea_type=args.fea_type)
+        val_dataset = KmeanImgDataset(args.val_path,fea_type=args.fea_type,dataset=dataset)
         val_loader = torch.utils.data.DataLoader(val_dataset,batch_size=args.batchSize,shuffle=False,num_workers=0)
 
 
         print('num_train_files: '+str(len(train_dataset.filepaths)))
         print('num_val_files: ' + str(len(val_dataset.filepaths)))
 
-        trainer=ModelNetTrainer((nem,cnet_2),train_loader,val_loader,optimizer,nn.CrossEntropyLoss(),None,log_dir,num_views=args.num_views)
+        trainer=ModelNetTrainer((nem,cnet_2),train_loader,val_loader,optimizer,nn.CrossEntropyLoss(),None,log_dir,num_views=args.num_views,class_num=class_num)
         trainer.train_nem_mvcnn(args.epoch)
 
     else:       # test
-        path = '/mnt/cloud_disk/huangjj/log_mvcnn/'+args.name
+        path = '/mnt/cloud_disk/huangjj/exp_mvcnn/'+args.name
         modelfile = args.modelfile
 
         pretraining = not args.no_pretraining
         log_dir = args.name
-        cnet = SVCNN(args.name, nclasses=40, pretraining=pretraining, cnn_name=args.cnn_name)
+        cnet = SVCNN(args.name, nclasses=class_num, pretraining=pretraining, cnn_name=args.cnn_name)
 
         if args.cnn_name.startswith('vgg'):
             input_dim = 4096
@@ -506,24 +530,24 @@ if __name__ == '__main__':
             type = None
             input_dim = None
 
-        nem = NEM(layer_norm=args.layer_norm, k=args.cluster_n, batch_size=args.batchSize, input_dim=input_dim,
+        nem = NEM(nclasses=class_num, layer_norm=args.layer_norm, k=args.cluster_n, batch_size=args.batchSize, input_dim=input_dim,
                   input_type=type, rnn_hidden_size=args.rnn_hidden_size, iter_num=args.iter_num,
-                  stop_gamma_grad=args.stop_gamma_grad,init_type=args.init_type,no_sig=args.no_sig,bn_init_sigma=args.bn_init_sigma,gamma_prior_loss=args.if_gamma_prior,arch=args.arch)
+                  stop_gamma_grad=args.stop_gamma_grad,init_type=args.init_type,no_sig=args.no_sig,bn_init_sigma=args.bn_init_sigma,gamma_prior_loss=args.if_gamma_prior,arch=args.arch,e_sigma=args.e_sigma)
 
         nem.load(path, modelfile)
 
-        cnet_2 = Multi_View_Net(cnet, cnn_name=args.cnn_name, nclasses=40, k=args.cluster_n, rnn_hidden_size=args.rnn_hidden_size, if_sort=args.if_sort, if_pooling=args.if_pool,save_feature=1)
+        cnet_2 = Multi_View_Net(cnet, cnn_name=args.cnn_name, nclasses=class_num, k=args.cluster_n, rnn_hidden_size=args.rnn_hidden_size, if_sort=args.if_sort, if_pooling=args.if_pool,save_feature=0)
         del cnet
         cnet_2.load(path, modelfile)
         cnet_2.eval()
 
-        val_dataset = KmeanImgDataset(args.val_path, fea_type=args.fea_type)
+        val_dataset = KmeanImgDataset(args.val_path, fea_type=args.fea_type,dataset=dataset)
         val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=args.batchSize, shuffle=False, num_workers=0)
 
         optimizer = None
 
         trainer = ModelNetTrainer((nem, cnet_2), None, val_loader, optimizer, nn.CrossEntropyLoss(), None,
-                                  log_dir, num_views=args.num_views)
+                                  log_dir, num_views=args.num_views, class_num=class_num)
 
-        trainer.save_feature_nem(None)
-        #loss, val_overall_acc, val_mean_class_acc = trainer.update_validation_accuracy_nem(None)
+        #trainer.save_feature_nem(None)
+        loss, val_overall_acc, val_mean_class_acc = trainer.update_validation_accuracy_nem(None)
