@@ -34,10 +34,13 @@ parser.set_defaults(train=False)
 #parser.add_argument("-val_path", type=str, default="/mnt/cloud_disk/yw/MVCNN_features_vggm_pretrained_imagenet_modelnet10_10hidden_val/")
 #parser.add_argument("-train_path", type=str, default="/mnt/cloud_disk/yw/MVCNN_features_vggm_pretrained_imagenet_train/")
 #parser.add_argument("-val_path", type=str, default="/mnt/cloud_disk/yw/MVCNN_features_vggm_pretrained_imagenet_val/")
-#parser.add_argument("-train_path", type=str, default="/mnt/cloud_disk/yw/MVCNN_features_vggm_pretrained_imagenet_shapenetcore_train/")
-#parser.add_argument("-val_path", type=str, default="/mnt/cloud_disk/yw/MVCNN_features_vggm_pretrained_imagenet_shapenetcore_test/")
-parser.add_argument("-train_path", type=str, default="/mnt/cloud_disk/yw/MVCNN_features_vgg19_pretrained_imagenet_shapenetcore_train/")
-parser.add_argument("-val_path", type=str, default="/mnt/cloud_disk/yw/MVCNN_features_vgg19_pretrained_imagenet_shapenetcore_test/")
+parser.add_argument("-train_path", type=str, default="/mnt/cloud_disk/yw/MVCNN_features_vggm_pretrained_imagenet_shapenetcore_train/")
+parser.add_argument("-val_path", type=str, default="/mnt/cloud_disk/yw/MVCNN_features_vggm_pretrained_imagenet_shapenetcore_test/")
+
+#parser.add_argument("-train_path", type=str, default="/mnt/cloud_disk/yw/MVCNN_features_resnet50_pretrained_imagenet_modelnet40_train/")
+#parser.add_argument("-val_path", type=str, default="/mnt/cloud_disk/yw/MVCNN_features_resnet50_pretrained_imagenet_modelnet40_val/")
+#parser.add_argument("-train_path", type=str, default="/mnt/cloud_disk/yw/MVCNN_features_vgg19_pretrained_imagenet_shapenetcore_train/")
+#parser.add_argument("-val_path", type=str, default="/mnt/cloud_disk/yw/MVCNN_features_vgg19_pretrained_imagenet_shapenetcore_test/")
 parser.add_argument("-fea_type", type=str, help="feature type for NEM, fc or conv", default='fc')
 parser.add_argument("-layer_norm", type=int, help="use layernorm for NEM or not", default=1)
 parser.add_argument("-cluster_n", type=int, help="cluster number", default=4)
@@ -163,60 +166,24 @@ class NEM(Model):
         self.if_total_loss = if_total_loss
         self.arch=arch if self.k > 1 else 0
         #  before_NEM => rnn_NEM => after_NEM
-        if layer_norm < 1:
-            if self.type == 'fc':
-                self.enc1 = nn.Sequential(nn.Linear(self.input_dim, 1024), nn.ELU(), nn.Dropout(0.5))
-            else:
-                self.enc0 = nn.Conv2d(512,128,1)
-                self.enc1 = nn.Sequential(nn.Linear(128*7*7, 1024), nn.ELU(), nn.Dropout(0.5))
-            self.enc2 = nn.Sequential(nn.Linear(1024*self.m, 4096), nn.ELU(), nn.Dropout(0.5))
 
-            self.rnn_nem = nn.GRUCell(4096,self.rnn_hidden_size)
-            if no_sig == 0:
-                self.after_rnn = nn.Sigmoid()
-            else:
-                self.after_rnn = MyIdentity()
-
-            self.dec1 = nn.Sequential(nn.Linear(self.rnn_hidden_size,4096), nn.ReLU(), nn.Dropout(0.5))
-            self.dec2 = nn.Sequential(nn.Linear(4096,1024*self.m), nn.ReLU(), nn.Dropout(0.5))
-            if self.type == 'fc':
-                self.dec3 = nn.Linear(1024, self.input_dim)
-            else:
-                self.dec3 = nn.Linear(1024,128*7*7)
-                self.dec4 = nn.Conv2d(128,512,1)
-
-
-        else:
-            if self.type == 'fc':
-                self.enc1 = nn.Sequential(nn.Linear(self.input_dim, 1024), nn.LayerNorm(1024), nn.ELU(),
+        if True: # layer_norm
+            self.enc1 = nn.Sequential(nn.Linear(self.input_dim, 1024), nn.LayerNorm(1024), nn.ELU(),
                                           nn.Dropout(0.5))
-            else:
-                self.enc0 = nn.Sequential(nn.Conv2d(512, 128, 1), nn.LayerNorm([128,7,7]))
-                self.enc1 = nn.Sequential(nn.Linear(128 * 7 * 7, 1024), nn.LayerNorm(1024), nn.ELU(),
-                                         nn.Dropout(0.5))
-            if self.arch == 1:
-                self.enc2 = nn.Sequential( nn.Linear(1024,4096), nn.LayerNorm(4096), nn.ELU(), nn.Dropout(0.5))
 
-            else:
-                self.enc2 = nn.Sequential( nn.Linear(1024*self.m, 4096), nn.LayerNorm(4096), nn.ELU(), nn.Dropout(0.5))
+
+            self.enc2 = nn.Sequential( nn.Linear(1024*self.m, 4096), nn.LayerNorm(4096), nn.ELU(), nn.Dropout(0.5))
 
             self.rnn_nem = nn.GRUCell(4096, self.rnn_hidden_size)
-            if self.no_sig == 0:
-                self.after_rnn = nn.Sequential( nn.LayerNorm(self.rnn_hidden_size), nn.Sigmoid())
-            else:
-                self.after_rnn = nn.Sequential(nn.LayerNorm(self.rnn_hidden_size))
+
+            self.after_rnn = nn.Sequential(nn.LayerNorm(self.rnn_hidden_size))
 
             self.dec1 = nn.Sequential(nn.Linear(self.rnn_hidden_size, 4096), nn.LayerNorm(4096), nn.ReLU(), nn.Dropout(0.5))
-            if self.arch == 0:
-                self.dec2 = nn.Sequential(nn.Linear(4096, 1024*self.m), nn.LayerNorm(1024*self.m))
-            else:
-                self.dec2 = nn.Sequential(nn.Linear(4096,1024),nn.LayerNorm(1024))
 
-            if self.type == 'fc':
-                self.dec3  = nn.Linear(1024, self.input_dim)
-            else:
-                self.dec3 = nn.Sequential(nn.Linear(1024,128*7*7), nn.LayerNorm(128*7*7), nn.ReLU(), nn.Dropout(0.5))
-                self.dec4 = nn.Conv2d(128, 512, 1)
+            self.dec2 = nn.Sequential(nn.Linear(4096, 1024*self.m), nn.LayerNorm(1024*self.m))
+
+            self.dec3  = nn.Linear(1024, self.input_dim)
+
 
     def init_state(self,x_shape,x): # x_shape: b,m,c,h,w
         B =  x_shape[0]
@@ -224,26 +191,10 @@ class NEM(Model):
         k = self.k
         assert m == x_shape[1], "number of view dose not match"
 
-        # init sigma for e_step
-        # batch norm init
-        if self.bn_init_sigma == 1:
-            mu = torch.mean(x.view(B*m,-1),0).unsqueeze(0)
-            e_sigma = torch.sqrt(torch.sum((x.view(B*m,-1)-mu)**2,0)/(B*m)) # c
-
-            self.e_sigma = e_sigma.unsqueeze(0).unsqueeze(0).unsqueeze(0).cuda() # b,k,m,c
-            if self.type != 'fc':
-                self.e_sigma = self.e_sigma.view(-1,-1,-1,x_shape[2],x_shape[3],x_shape[4]).cuda()
-            #self.e_sigma =self.e_sigma.detach()
-            self.total_sigma = self.total_sigma + self.e_sigma
-            self.e_sigma = torch.clamp(self.e_sigma,1e-2,1e2)
-            #self.e_sigma = self.e_sigma.cuda()
         # h: Bxk,rnn_h
         h = torch.zeros(B*k,self.rnn_hidden_size)
         #pred: B,k,m,c,w,h or B,k,m,d
-        if self.type == 'fc':
-            pred = torch.ones([B,k,m,self.input_dim]) * self.pred_init
-        else:
-            pred = torch.ones([B,k,m,x_shape[2],x_shape[3],x_shape[4]]) * self.pred_init
+        pred = torch.ones([B,k,m,self.input_dim]) * self.pred_init
 
         #gamma: B,k,m,1
         gamma_prior, gamma = torch.ones([B,k,m,1])/m, torch.ones([B,k,m,1])
@@ -268,50 +219,28 @@ class NEM(Model):
     def run_inner_rnn(self, input, h_old):
         # input: b,k,m,c,w,h or b,k,m,d
         # h_old: bxk, rnn_h
-        if self.type == 'fc':
-            reshaped_input = input.view(self.b*self.k*self.m,-1)
-        else:
-            reshaped_input = input.view(input.shape[0]*input.shape[1]*input.shape[2],input.shape[3],input.shape[4],-1) #bxkxm,c,w,h
+        reshaped_input = input.view(self.b*self.k*self.m,-1)
 
         #### before_nem
         enc1_input = reshaped_input
-        if not (self.type == 'fc'):
-            enc0_out = self.enc0(reshaped_input) #bxkxm,c,w,h
-            enc0_out_reshape = enc0_out.view(-1, enc0_out.shape[1]*enc0_out.shape[2]*enc0_out.shape[3]) #bxkxm,cxwxh
-            enc1_input = enc0_out_reshape
-
         enc1_out = self.enc1(enc1_input) # bxkxm,d
-        if self.arch == 1:
-            # pool, bxk,d
-            enc1_out_reshape = torch.max(enc1_out.view(self.b*self.k,self.m,-1),1)[0]
-        else:
-            enc1_out_reshape = enc1_out.view(self.b*self.k,-1) # bxk, mxd
+
+        enc1_out_reshape = enc1_out.view(self.b*self.k,-1) # bxk, mxd
         enc2_out = self.enc2(enc1_out_reshape) #bxk,d
 
         #### em_rnn
         rnn_output_pre= self.rnn_nem(enc2_out, h_old)
-        if self.no_sig == 1:
-            rnn_output = rnn_output_pre
-        else:
-            rnn_output = self.after_rnn(rnn_output_pre)
+        rnn_output = rnn_output_pre
 
         h_new = rnn_output #bxk,d
 
         #### after_nem
         dec1_out = self.dec1(rnn_output)
         dec2_out = self.dec2(dec1_out) #bxk,d
-        if self.arch == 0:
-            dec2_out_reshape = dec2_out.view(self.b * self.k * self.m, -1)  # bxkxm,d
-        else:
-            dec2_out_reshape = dec2_out.unsqueeze(1).expand(-1,self.m,-1)
+        dec2_out_reshape = dec2_out.view(self.b * self.k * self.m, -1)  # bxkxm,d
         dec3_out = self.dec3(dec2_out_reshape)
 
-        if self.type == 'fc':
-            output = dec3_out.view(self.b,self.k,self.m,-1)
-        else:
-            dec3_out_reshape = dec3_out.view(self.b*self.k*self.m,128,7,7)
-            dec4_out = self.dec4(dec3_out_reshape)
-            output = dec4_out.view(self.b,self.k,self.m,-1,7,7)
+        output = dec3_out.view(self.b,self.k,self.m,-1)
 
         return output, h_new
 
@@ -381,6 +310,12 @@ class Multi_View_Net(Model):
                 self.net._modules['0'] = nn.Linear(self.rnn_hidden_size*self.k,4096)
             else:
                 self.net._modules['0'] = nn.Linear(self.rnn_hidden_size, 4096)
+        elif cnn_name == 'alexnet':
+            self.net = model.net_2
+            if self.if_pooling == 0:
+                self.net._modules['0'] = nn.Linear(self.rnn_hidden_size * self.k, 9216)
+            else:
+                self.net._modules['0'] = nn.Linear(self.rnn_hidden_size, 9216)
         else:
             if self.if_pooling == 0:
                 self.net = nn.Sequential(nn.Linear(self.rnn_hidden_size*self.k,4096), nn.ReLU(), nn.Dropout(0.5),nn.Linear(4096,self.nclasses))
@@ -410,8 +345,8 @@ class Multi_View_Net(Model):
         #  sort and concatenate
         if self.if_sort == 1:
             _, idx = torch.sort(scores_reshape, dim=1, descending=True)
-            if self.save_fea == 1:
-               return idx
+            #if self.save_fea == 1:
+             #  return idx
             masked_input_sort = torch.zeros_like(masked_input)
             for i in range(masked_input.shape[0]): #b
                 for j in range(self.k):
@@ -477,8 +412,12 @@ if __name__ == '__main__':
 
         if args.cnn_name.startswith('vgg'):
             input_dim = 4096
+        elif args.cnn_name == 'alexnet':
+            input_dim = 4096
         elif args.cnn_name == 'resnet50':
             input_dim = 2048
+        elif args.cnn_name == 'googlenet':
+            input_dim =1024
         else:
             raise KeyError('the backbone is not suported yet')
         if args.fea_type == 'fc':
@@ -495,7 +434,7 @@ if __name__ == '__main__':
         cnet_2.cuda()
 
         optimizer = optim.Adam(itertools.chain(nem.parameters(),cnet_2.parameters()), lr=args.lr, weight_decay=args.weight_decay, betas=(0.9, 0.999))
-        #optimizer = optim.Adagrad(itertools.chain(nem.parameters(), cnet_2.parameters()), lr=args.lr,lr_decay=1/4000,weight_decay=args.weight_decay)
+
 
         train_dataset = KmeanImgDataset(args.train_path, fea_type=args.fea_type,dataset=dataset) # fc feature path or conv feature path
         train_loader = torch.utils.data.DataLoader(train_dataset,batch_size=args.batchSize,shuffle=True,num_workers=0)
@@ -520,8 +459,12 @@ if __name__ == '__main__':
 
         if args.cnn_name.startswith('vgg'):
             input_dim = 4096
+        elif args.cnn_name == 'alexnet':
+            input_dim = 4096
         elif args.cnn_name == 'resnet50':
             input_dim = 2048
+        elif args.cnn_name == 'googlenet':
+            input_dim =1024
         else:
             raise KeyError('the backbone is not suported yet')
         if args.fea_type == 'fc':
@@ -536,7 +479,7 @@ if __name__ == '__main__':
 
         nem.load(path, modelfile)
 
-        cnet_2 = Multi_View_Net(cnet, cnn_name=args.cnn_name, nclasses=class_num, k=args.cluster_n, rnn_hidden_size=args.rnn_hidden_size, if_sort=args.if_sort, if_pooling=args.if_pool,save_feature=0)
+        cnet_2 = Multi_View_Net(cnet, cnn_name=args.cnn_name, nclasses=class_num, k=args.cluster_n, rnn_hidden_size=args.rnn_hidden_size, if_sort=args.if_sort, if_pooling=args.if_pool,save_feature=1)
         del cnet
         cnet_2.load(path, modelfile)
         cnet_2.eval()
@@ -549,5 +492,5 @@ if __name__ == '__main__':
         trainer = ModelNetTrainer((nem, cnet_2), None, val_loader, optimizer, nn.CrossEntropyLoss(), None,
                                   log_dir, num_views=args.num_views, class_num=class_num)
 
-        #trainer.save_feature_nem(None)
-        loss, val_overall_acc, val_mean_class_acc = trainer.update_validation_accuracy_nem(None)
+        trainer.save_feature_nem(None)
+        #loss, val_overall_acc, val_mean_class_acc = trainer.update_validation_accuracy_nem(None)

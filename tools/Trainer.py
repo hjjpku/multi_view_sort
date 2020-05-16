@@ -444,7 +444,7 @@ class ModelNetTrainer(object):
                 nem_outputs.append(state)
 
             out_data = c_net(nem_outputs[-1][0],gamma)
-            data_path = '/mnt/cloud_disk/yw/retrieval_test_mnet10/' + data[2][0].split('/', 5)[5]
+            data_path = '/mnt/cloud_disk/yw/retrieval_test_vggm_shapenetcore/' + data[2][0].split('/', 5)[5]
             #data_path = '/mnt/cloud_disk/yw/gamma2/'+ data[2][0].split('/',5)[5][0:-3] + 'npz'
             np.save(data_path,out_data.cpu().detach().numpy())
             #np.savez(data_path, save_gamma=gamma.cpu().detach().numpy(), save_sort=out_data.cpu().detach().numpy())
