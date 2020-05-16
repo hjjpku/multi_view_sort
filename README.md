@@ -1,12 +1,12 @@
-As mentioned in our paper, we develop our project based on Su et al.,’s [1] implementation of MVCNN (we use code from [here](https://github.com/jongchyisu/mvcnn_pytorch)). We implement our work with Python3.5.2 and Pytorch1.0.1.post2.
-We conduct the experiments on a single Tesla K80 GPU with CUDA9.0.
-For the sake of GPU memory consumption, we employ a two stage training strategy.We utilize a pretrained VGG-M model for the feature extraction, and train our VMM model with the features as input. To run our codes, you should:
-– Install the required dependencies, including:\\
-	pytorch\\
-	tensorboardX\\
-	numpy\\
-	scipy\\
-	For the detailed version, you can refer to the “requirement.txt”. (Note: not all the libs listed in requirement.txt are needed.)
+As mentioned in our paper, we develop our project based on Su et al.,’s [1] implementation of MVCNN (we use code from [here](https://github.com/jongchyisu/mvcnn_pytorch)). We implement our work with Python3.5.2 and Pytorch1.0.1.post2.  
+We conduct the experiments on a single Tesla K80 GPU with CUDA9.0.  
+For the sake of GPU memory consumption, we employ a two stage training strategy.We utilize a pretrained VGG-M model for the feature extraction, and train our VMM model with the features as input. To run our codes, you should:  
+– Install the required dependencies, including:  
+	pytorch  
+	tensorboardX  
+	numpy  
+	scipy  
+	For the detailed version, you can refer to the “requirement.txt”. (Note: not all the libs listed in requirement.txt are needed.)  
 – Prepare the dataset:
 	1. Download dataset Modelnet40 from http://modelnet.cs.princeton.edu/
 	2. Render 2D images by blender (we use code from https://github.com/jongchyisu/mvcnn_pytorch)
