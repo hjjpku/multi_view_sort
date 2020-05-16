@@ -18,7 +18,7 @@ For the sake of GPU memory consumption, we employ a two stage training strategy.
 >We adopt Su’s MVCNN codes to finetune the model.Due to the limitation of the size to the uploaded file, we cannot provide a pre-trained VGGM model in the supplementary materials directly. Therefore, we introduce the way to trained VGG-M on ModelNet40 instead:
 >>`cd feature extractor`  
 >>`python train mvcnn.py -name xxx -cnn_name vggm -train_path xxx -val_path xxx`  
->For example:
+>For example:  
 >>`python train mvcnn.py -name MVCNN -cnn_name vggm -train_path /Modelnet40_dataset_rendered_images/*/train -val_path /Modelnet40_dataset_rendered_images/*/test`  
 >3. Extract features with the trained vgg-m:
 >>`python mvcnn_save_feature.py -name xxx -cnn_name vggm`  
