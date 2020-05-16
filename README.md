@@ -14,7 +14,7 @@ For the sake of GPU memory consumption, we employ a two stage training strategy.
 >>/MVCNN dataset/class folders/train(or test)/rendered images
 ## – Prepare the feature extractor(VGG-M) and extract the features:
 >1. Clone codes from xxx and put it under the root directory
->2. We utilize a [VGG-M pretrained on imagenet] (http://data.lip6.fr/cadene/pretrainedmodels/vggm-786f2434.pth) and than finetune it on ModelNet40 as the feature extractor.
+>2. We utilize a [VGG-M pretrained on imagenet](http://data.lip6.fr/cadene/pretrainedmodels/vggm-786f2434.pth) and than finetune it on ModelNet40 as the feature extractor.
 >We adopt Su’s MVCNN codes to finetune the model.Due to the limitation of the size to the uploaded file, we cannot provide a pre-trained VGGM model in the supplementary materials directly. Therefore, we introduce the way to trained VGG-M on ModelNet40 instead:
 >>`cd feature extractor`  
 >>`python train mvcnn.py -name xxx -cnn_name vggm -train_path xxx -val_path xxx`  
