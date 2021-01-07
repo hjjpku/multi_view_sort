@@ -1,4 +1,5 @@
-This is the repository for our work ##[Learning the Global Descriptor for 3D Object Recognition based on Multiple Views Decomposition](https://www.researchgate.net/publication/348028323_Learning_the_Global_Descriptor_for_3D_Object_Recognition_based_on_Multiple_Views_Decomposition)
+This is the repository for our work [**Learning the Global Descriptor for 3D Object Recognition based on Multiple Views Decomposition**](https://www.researchgate.net/publication/348028323_Learning_the_Global_Descriptor_for_3D_Object_Recognition_based_on_Multiple_Views_Decomposition)  
+
 The paper is accpeted by IEEE Transactions on Multimedia (TMM 2020). If you find our work helpful, please consider to cite:
 ```
 @article{huang2020learning,
