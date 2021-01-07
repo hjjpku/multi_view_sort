@@ -1,3 +1,14 @@
+This is the repository for our work ##[Learning the Global Descriptor for 3D Object Recognition based on Multiple Views Decomposition](https://www.researchgate.net/publication/348028323_Learning_the_Global_Descriptor_for_3D_Object_Recognition_based_on_Multiple_Views_Decomposition)
+The paper is accpeted by IEEE Transactions on Multimedia (TMM 2020). If you find our work helpful, please consider to cite:
+```
+@article{huang2020learning,
+	  title={Learning the Global Descriptor for 3D Object Recognition based on Multiple Views Decomposition},
+	    author={Huang, Jingjia and Yan, Wei and Li, Thomas H and Liu, Shan and Li, Ge},
+		  journal={IEEE Transactions on Multimedia},
+		    year={2020},
+			  publisher={IEEE}
+}
+```
 As mentioned in our paper, we develop our project based on Su et al.,’s [1] implementation of MVCNN (we use codes from [here](https://github.com/jongchyisu/mvcnn_pytorch)). We implement our work with Python3.5.2 and Pytorch1.0.1.post2.  
 We conduct the experiments on a single Tesla K80 GPU with CUDA9.0.  
 For the sake of GPU memory consumption, we employ a two stage training strategy.We utilize a pretrained VGG-M model for the feature extraction, and train our VMM model with the features as input. To run our codes, you should  
